@@ -58,12 +58,15 @@
 #include <uORB/topics/sensor_baro.h>
 #include <uORB/topics/vehicle_odometry.h>
 #include <uORB/topics/wheel_encoders.h>
+#include <uORB/PublicationMulti.hpp>
+#include <uORB/topics/sensor_mag.h>
 
 #include <gz/math.hh>
 #include <gz/msgs.hh>
 #include <gz/transport.hh>
 
 #include <gz/msgs/imu.pb.h>
+#include <gz/msgs/magnetometer.pb.h>
 #include <gz/msgs/fluid_pressure.pb.h>
 #include <gz/msgs/model.pb.h>
 #include <gz/msgs/odometry_with_covariance.pb.h>
@@ -106,6 +109,7 @@ private:
 	void poseInfoCallback(const gz::msgs::Pose_V &pose);
 	void odometryCallback(const gz::msgs::OdometryWithCovariance &odometry);
 	void navSatCallback(const gz::msgs::NavSat &nav_sat);
+	void MagnetometerCallback(const gz::msgs::Magnetometer &Magnetometer);
 
 	/**
 	*
@@ -130,10 +134,12 @@ private:
 	uORB::PublicationMulti<sensor_accel_s> _sensor_accel_pub{ORB_ID(sensor_accel)};
 	uORB::PublicationMulti<sensor_gyro_s>  _sensor_gyro_pub{ORB_ID(sensor_gyro)};
 	uORB::PublicationMulti<vehicle_odometry_s> _visual_odometry_pub{ORB_ID(vehicle_visual_odometry)};
+	uORB::PublicationMulti<sensor_mag_s> _sensor_mag_pub{ORB_ID(sensor_mag)};
 
 	GZMixingInterfaceESC   _mixing_interface_esc{_node, _node_mutex};
 	GZMixingInterfaceServo _mixing_interface_servo{_node, _node_mutex};
 	GZMixingInterfaceWheel _mixing_interface_wheel{_node, _node_mutex};
+
 
 	px4::atomic<uint64_t> _world_time_us{0};
 

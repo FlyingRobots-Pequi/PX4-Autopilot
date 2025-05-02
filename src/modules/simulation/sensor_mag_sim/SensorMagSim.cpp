@@ -124,7 +124,7 @@ void SensorMagSim::Run()
 		}
 	}
 
-	if (_mag_earth_available) {
+	if (_mag_earth_available && 0) {
 		vehicle_attitude_s attitude;
 
 		if (_vehicle_attitude_sub.update(&attitude)) {

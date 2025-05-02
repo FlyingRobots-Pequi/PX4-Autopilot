@@ -220,6 +220,15 @@ int GZBridge::init()
 	std::string nav_sat_topic = "/world/" + _world_name + "/model/" + _model_name +
 				    "/link/base_link/sensor/navsat_sensor/navsat";
 
+	// Magnetometer: /world/$WORLD/model/$MODEL/link/base_link/sensor/manetomenter_sensor/magnetometer (Marcelo esteve aqui hehe)
+	std::string mag_topic = "/world/" + _world_name + "/model/" + _model_name +
+					"/link/base_link/sensor/magnetometer_sensor/magnetometer";
+
+	if (!_node.Subscribe(mag_topic, &GZBridge::MagnetometerCallback, this)) {
+		PX4_ERR("failed to subscribe to %s", mag_topic.c_str());
+		return PX4_ERROR;
+	}
+
 	if (!_node.Subscribe(nav_sat_topic, &GZBridge::navSatCallback, this)) {
 		PX4_ERR("failed to subscribe to %s", nav_sat_topic.c_str());
 		return PX4_ERROR;
@@ -740,6 +749,42 @@ void GZBridge::navSatCallback(const gz::msgs::NavSat &nav_sat)
 
 	pthread_mutex_unlock(&_node_mutex);
 }
+
+void GZBridge::MagnetometerCallback(const gz::msgs::Magnetometer &mag_msg)
+{
+    if (hrt_absolute_time() == 0) {
+        return;
+    }
+
+    // Mutex se quiser garantir thread-safety
+    pthread_mutex_lock(&_node_mutex);
+
+    // Converte o timestamp do Gazebo para micros
+    const uint64_t time_us =
+        mag_msg.header().stamp().sec() * 1'000'000 +
+        mag_msg.header().stamp().nsec() / 1'000;
+
+    // Mapeia o relógio do simulador
+    if (time_us > _world_time_us.load()) {
+        updateClock(mag_msg.header().stamp().sec(),
+                    mag_msg.header().stamp().nsec());
+    }
+
+    // Monta a mensagem uORB
+    sensor_mag_s report{};
+    report.timestamp = hrt_absolute_time();    // tempo “real” do PX4
+    report.timestamp_sample = time_us;         // tempo simulado
+    report.device_id = 197388;                 // esse id aparece no parametro da px4 CAL_MAG0_ID, do airframe 4001 o mag0 vem como 197388. Caso seja alterado, deve ser alterado aqui tambem
+    report.x = mag_msg.field_tesla().x();      // As coordenadas do GZ seguem o ENU, e possivel mudar aqui para corrigir para seguir o NED
+    report.y = mag_msg.field_tesla().y();      // TODO: Decidir entre mudanca do NED ou so rotacionar o drone
+    report.z = mag_msg.field_tesla().z();
+
+    // Publica para o PX4
+    _sensor_mag_pub.publish(report);
+
+    pthread_mutex_unlock(&_node_mutex);
+}
+
 
 void GZBridge::rotateQuaternion(gz::math::Quaterniond &q_FRD_to_NED, const gz::math::Quaterniond q_FLU_to_ENU)
 {
