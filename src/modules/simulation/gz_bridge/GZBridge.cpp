@@ -225,6 +225,11 @@ int GZBridge::init()
 		return PX4_ERROR;
 	}
 
+	// LiDAR: /world/$WORLD/model/$MODEL/link/lidar_mount_link/sensor/rplidar_a2/scan
+	std::string lidar_topic = "/world/" + _world_name + "/model/" + _model_name +
+				  "/link/lidar_mount_link/sensor/rplidar_a2/scan";
+	_node.Subscribe(lidar_topic, &GZBridge::lidarCallback, this);
+
 	if (!_mixing_interface_esc.init(_model_name)) {
 		PX4_ERR("failed to init ESC output");
 		return PX4_ERROR;
@@ -737,6 +742,54 @@ void GZBridge::navSatCallback(const gz::msgs::NavSat &nav_sat)
 		global_position_groundtruth.alt = nav_sat.altitude();
 		_gpos_ground_truth_pub.publish(global_position_groundtruth);
 	}
+
+	pthread_mutex_unlock(&_node_mutex);
+}
+
+void GZBridge::lidarCallback(const gz::msgs::LaserScan &scan)
+{
+	if (hrt_absolute_time() == 0) { return; }
+
+	pthread_mutex_lock(&_node_mutex);
+
+	obstacle_distance_s obs{};
+	obs.timestamp      = hrt_absolute_time();
+	obs.frame          = obstacle_distance_s::MAV_FRAME_BODY_FRD;
+	obs.sensor_type    = obstacle_distance_s::MAV_DISTANCE_SENSOR_LASER;
+	obs.increment      = 5.0f;
+	obs.min_distance   = 20;    // cm
+	obs.max_distance   = 1200;  // cm (12 m)
+	obs.angle_offset   = 0.0f;
+
+	// Initialize all bins to "no obstacle" (max_distance + 1)
+	for (int i = 0; i < 72; i++) {
+		obs.distances[i] = obs.max_distance + 1;
+	}
+
+	const double angle_min  = scan.angle_min();
+	const double angle_step = scan.angle_step();
+
+	for (int i = 0; i < scan.ranges_size(); i++) {
+		// Gazebo FLU angle: 0=forward, +π/2=left, -π/2=right
+		double flu_angle = angle_min + i * angle_step;
+
+		// Convert to FRD: negate (right becomes positive)
+		double frd_angle = -flu_angle;
+
+		// Normalize to [0, 2π)
+		frd_angle = std::fmod(frd_angle, 2.0 * M_PI);
+		if (frd_angle < 0.0) { frd_angle += 2.0 * M_PI; }
+
+		int bin = (int)std::round(frd_angle * (180.0 / M_PI) / 5.0) % 72;
+
+		double range = scan.ranges(i);
+
+		if (std::isfinite(range) && range >= 0.2 && range <= 12.0) {
+			obs.distances[bin] = (uint16_t)(range * 100.0);
+		}
+	}
+
+	_obstacle_distance_pub.publish(obs);
 
 	pthread_mutex_unlock(&_node_mutex);
 }

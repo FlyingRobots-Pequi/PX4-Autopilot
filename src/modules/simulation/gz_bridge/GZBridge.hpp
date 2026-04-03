@@ -67,6 +67,9 @@
 #include <gz/msgs/fluid_pressure.pb.h>
 #include <gz/msgs/model.pb.h>
 #include <gz/msgs/odometry_with_covariance.pb.h>
+#include <gz/msgs/laserscan.pb.h>
+
+#include <uORB/topics/obstacle_distance.h>
 
 using namespace time_literals;
 
@@ -106,6 +109,7 @@ private:
 	void poseInfoCallback(const gz::msgs::Pose_V &pose);
 	void odometryCallback(const gz::msgs::OdometryWithCovariance &odometry);
 	void navSatCallback(const gz::msgs::NavSat &nav_sat);
+	void lidarCallback(const gz::msgs::LaserScan &scan);
 
 	/**
 	*
@@ -130,6 +134,7 @@ private:
 	uORB::PublicationMulti<sensor_accel_s> _sensor_accel_pub{ORB_ID(sensor_accel)};
 	uORB::PublicationMulti<sensor_gyro_s>  _sensor_gyro_pub{ORB_ID(sensor_gyro)};
 	uORB::PublicationMulti<vehicle_odometry_s> _visual_odometry_pub{ORB_ID(vehicle_visual_odometry)};
+	uORB::Publication<obstacle_distance_s>     _obstacle_distance_pub{ORB_ID(obstacle_distance)};
 
 	GZMixingInterfaceESC   _mixing_interface_esc{_node, _node_mutex};
 	GZMixingInterfaceServo _mixing_interface_servo{_node, _node_mutex};
