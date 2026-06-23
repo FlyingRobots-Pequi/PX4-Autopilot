@@ -187,6 +187,17 @@ int GZBridge::init()
 		return PX4_ERROR;
 	}
 
+	// Magnetometer: /world/$WORLD/model/$MODEL/link/base_link/sensor/magnetometer_sensor/magnetometer
+	// O campo vem do world SDF (<magnetic_field> + gz-sim-magnetometer-system); nao precisa de GPS.
+	// Requer SENS_EN_MAGSIM=0 para nao conflitar com o sensor_mag_sim (mesmo device_id 197388).
+	std::string magnetometer_topic = "/world/" + _world_name + "/model/" + _model_name +
+					 "/link/base_link/sensor/magnetometer_sensor/magnetometer";
+
+	if (!_node.Subscribe(magnetometer_topic, &GZBridge::magnetometerCallback, this)) {
+		PX4_ERR("failed to subscribe to %s", magnetometer_topic.c_str());
+		return PX4_ERROR;
+	}
+
 
 	// IMU: /world/$WORLD/model/$MODEL/link/base_link/sensor/imu_sensor/imu
 	std::string odometry_topic = "/model/" + _model_name + "/odometry_with_covariance";
@@ -508,6 +519,39 @@ void GZBridge::imuCallback(const gz::msgs::IMU &imu)
 	sensor_gyro.temperature = NAN;
 	sensor_gyro.samples = 1;
 	_sensor_gyro_pub.publish(sensor_gyro);
+
+	pthread_mutex_unlock(&_node_mutex);
+}
+
+void GZBridge::magnetometerCallback(const gz::msgs::Magnetometer &mag)
+{
+	if (hrt_absolute_time() == 0) {
+		return;
+	}
+
+	pthread_mutex_lock(&_node_mutex);
+
+	const uint64_t time_us = (mag.header().stamp().sec() * 1000000) + (mag.header().stamp().nsec() / 1000);
+
+	if (time_us > _world_time_us.load()) {
+		updateClock(mag.header().stamp().sec(), mag.header().stamp().nsec());
+	}
+
+	// gz reporta o campo no corpo (FLU) em Tesla. PX4 espera FRD em Gauss (x1e4).
+	static const auto q_FLU_to_FRD = gz::math::Quaterniond(0, 1, 0, 0);
+
+	gz::math::Vector3d mag_b = q_FLU_to_FRD.RotateVector(gz::math::Vector3d(
+					   mag.field_tesla().x(),
+					   mag.field_tesla().y(),
+					   mag.field_tesla().z()));
+
+	// O gz reporta field_tesla ja na magnitude de Gauss neste world (~0.48 p/ a Terra,
+	// = <magnetic_field> do arena.sdf), que e' justamente a unidade do sensor_mag do PX4.
+	// Entao passa direto (sem x1e4). Cast p/ float (gz Vector3d e' double).
+	_px4_mag.update(time_us,
+			(float)mag_b.X(),
+			(float)mag_b.Y(),
+			(float)mag_b.Z());
 
 	pthread_mutex_unlock(&_node_mutex);
 }

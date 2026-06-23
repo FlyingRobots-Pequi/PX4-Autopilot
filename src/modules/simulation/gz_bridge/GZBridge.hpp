@@ -44,6 +44,7 @@
 #include <px4_platform_common/posix.h>
 #include <px4_platform_common/px4_work_queue/ScheduledWorkItem.hpp>
 #include <lib/geo/geo.h>
+#include <lib/drivers/magnetometer/PX4Magnetometer.hpp>
 #include <uORB/PublicationMulti.hpp>
 #include <uORB/Subscription.hpp>
 #include <uORB/SubscriptionInterval.hpp>
@@ -64,6 +65,7 @@
 #include <gz/transport.hh>
 
 #include <gz/msgs/imu.pb.h>
+#include <gz/msgs/magnetometer.pb.h>
 #include <gz/msgs/fluid_pressure.pb.h>
 #include <gz/msgs/model.pb.h>
 #include <gz/msgs/odometry_with_covariance.pb.h>
@@ -103,6 +105,7 @@ private:
 	// void airspeedCallback(const gz::msgs::AirSpeedSensor &air_pressure);
 	void barometerCallback(const gz::msgs::FluidPressure &air_pressure);
 	void imuCallback(const gz::msgs::IMU &imu);
+	void magnetometerCallback(const gz::msgs::Magnetometer &mag);
 	void poseInfoCallback(const gz::msgs::Pose_V &pose);
 	void odometryCallback(const gz::msgs::OdometryWithCovariance &odometry);
 	void navSatCallback(const gz::msgs::NavSat &nav_sat);
@@ -129,6 +132,10 @@ private:
 
 	uORB::PublicationMulti<sensor_accel_s> _sensor_accel_pub{ORB_ID(sensor_accel)};
 	uORB::PublicationMulti<sensor_gyro_s>  _sensor_gyro_pub{ORB_ID(sensor_gyro)};
+
+	// Magnetometro do gz (campo declarado no world SDF) -> PX4. device_id 197388
+	// = DRV_MAG_DEVTYPE_MAGSIM, casa com CAL_MAG0_ID hardcoded no rcS do SITL.
+	PX4Magnetometer _px4_mag{197388, ROTATION_NONE};
 	uORB::PublicationMulti<vehicle_odometry_s> _visual_odometry_pub{ORB_ID(vehicle_visual_odometry)};
 
 	GZMixingInterfaceESC   _mixing_interface_esc{_node, _node_mutex};
