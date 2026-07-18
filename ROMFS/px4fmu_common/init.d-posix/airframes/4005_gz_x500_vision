@@ -8,3 +8,8 @@
 PX4_SIM_MODEL=${PX4_SIM_MODEL:=x500_vision}
 
 . ${R}etc/init.d-posix/airframes/4001_gz_x500
+
+# O mag vem do gz via GZBridge::magnetometerCallback (device_id 197388). O
+# sensor_mag_sim publica com o MESMO device_id, e as duas fontes brigando na
+# votacao derrubam o mag ("Magnetometer sensor #0 failure: Stale data").
+param set-default SENS_EN_MAGSIM 0
