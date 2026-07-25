@@ -1,0 +1,54 @@
+#!/bin/sh
+#
+# @name Gazebo Hermit (D455 depth, external vision)
+#
+# @type Quadrotor
+#
+
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=hermit}
+
+# Herda a base x500 do fork da equipe (geometria de rotores, hover, tuning de
+# controle aplicado sobre 4001 no branch feat/update-mag).
+. ${R}etc/init.d-posix/airframes/4001_gz_x500
+
+# ---- Fusao por visao externa (RTAB-Map): posicao + YAW por visao (fiel ao repo1) ----
+# EKF2_EV_CTRL 11 = pos horizontal (bit0) + pos vertical (bit1) + yaw (bit3) por visao.
+param set-default EKF2_EV_CTRL 11
+param set-default EKF2_EV_DELAY 200
+param set-default EKF2_HGT_REF 3
+param set-default EKF2_GPS_CTRL 0
+
+# Lever arm da camera D455 (posicao do sensor no corpo, frame FRD). Do SDF:
+# CameraJointD455 = (0.129227, 0, 0.0507) em base_link (FLU) -> FRD inverte Y e Z.
+# Sem isto o EKF assume a camera no centro do corpo e qualquer variacao de atitude
+# acopla erro de posicao (via lever arm nao modelado) na estimativa de offset do EV.
+param set-default EKF2_EV_POS_X 0.129227
+param set-default EKF2_EV_POS_Y 0.0
+param set-default EKF2_EV_POS_Z -0.0507
+
+# NOTA: EKF2_EVP_NOISE / EKF2_EVA_NOISE ficam nos defaults (0.1). Chegamos a subi-los
+# tentando matar os picos de inovacao de yaw, mas a causa real era o offset de 90 graus
+# do spawn (ver INTEGRACAO_RTABMAP.md secao "yaw"); com o spawn corrigido a inovacao cai
+# para ~0.0007 rad e nao ha necessidade de afrouxar o modelo de ruido.
+
+# Mag fora da fusao: o yaw vem da visao (heading GPS+mag-denied puro).
+param set-default EKF2_MAG_TYPE 5
+
+# GPS simulado desligado (voo GPS-denied).
+param set-default SENS_EN_GPSSIM 0
+
+# Mag simulado interno desligado: evita o conflito de device_id 197388 com o mag do
+# GZBridge (mesmo com MAG_TYPE 5, dois mags no mesmo device derrubam como "Stale").
+param set-default SENS_EN_MAGSIM 0
+
+# ---- Bypass headless: armar em OFFBOARD sem RC e sem estacao de solo ----
+# Este airframe e SO de simulacao (gz); nao afeta a configuracao do drone real.
+# Sem isto o PX4 recusa o arm (COMMAND_ACK = 1, TEMPORARILY_REJECTED) por causa dos
+# failsafes gcs_connection_lost e manual_control_signal_lost, exigindo abrir o
+# QGroundControl so para mandar o heartbeat de GCS.
+#   COM_RC_IN_MODE 4 = "stick input disabled": o PX4 nao espera RC nenhum.
+#   COM_RCL_EXCEPT  4 = bit 2 (Offboard) isento do failsafe de perda de RC.
+#   NAV_DLL_ACT     0 = nenhuma acao na perda de datalink (GCS) -> QGC dispensavel.
+param set-default COM_RC_IN_MODE 4
+param set-default COM_RCL_EXCEPT 4
+param set-default NAV_DLL_ACT 0
