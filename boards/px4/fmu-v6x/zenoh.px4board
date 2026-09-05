@@ -27,3 +27,35 @@ CONFIG_ZENOH_PUB_OPTION_OVERRIDE=n
 
 # 0 = NONE. Subir para 2 (INFO+ERROR) durante o bring-up.
 CONFIG_ZENOH_DEBUG=0
+
+# ---------------------------------------------------------------------
+# Selecao explicita de topicos.
+#
+# Com o default (ZENOH_PUBSUB_ALL, ~213 tipos) o firmware NAO CABE: o link
+# estoura o FLASH da v6x em 1088 bytes (100.06%). Aqui entram so os tipos
+# de fato usados -- os da cadeia de voo mais os que o dds_topics.yaml deste
+# fork ja entregava pelo XRCE (commit 22c66f49fb).
+#
+# Ao acrescentar topico no pub.csv/sub.csv do SD, ligue o tipo aqui tambem,
+# senao nao ha binding e o topico simplesmente nao aparece.
+# ---------------------------------------------------------------------
+CONFIG_ZENOH_PUBSUB_CUSTOM=y
+
+# cadeia de voo (pub.csv / sub.csv)
+CONFIG_ZENOH_PUBSUB_SENSOR_COMBINED=y
+CONFIG_ZENOH_PUBSUB_TIMESYNC_STATUS=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_LAND_DETECTED=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_LOCAL_POSITION=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_ODOMETRY=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_STATUS=y
+CONFIG_ZENOH_PUBSUB_OFFBOARD_CONTROL_MODE=y
+CONFIG_ZENOH_PUBSUB_TRAJECTORY_SETPOINT=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_COMMAND=y
+
+# herdados do dds_topics.yaml do fork (PR #3)
+CONFIG_ZENOH_PUBSUB_VEHICLE_ANGULAR_VELOCITY=y
+CONFIG_ZENOH_PUBSUB_TAKEOFF_STATUS=y
+CONFIG_ZENOH_PUBSUB_COLLISION_REPORT=y
+CONFIG_ZENOH_PUBSUB_CPULOAD=y
+CONFIG_ZENOH_PUBSUB_ESTIMATOR_STATUS=y
+CONFIG_ZENOH_PUBSUB_HOME_POSITION=y

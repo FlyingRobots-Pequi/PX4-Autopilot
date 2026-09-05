@@ -135,6 +135,18 @@ int uorb_top(char **topic_filter, int num_filters);
 typedef void 	*orb_advert_t;
 
 /**
+ * ORB topic subscription handle.
+ *
+ * Backport do PX4 main: la o handle de subscricao tem tipo proprio. No v1.15
+ * ele e um int cru, e o typedef abaixo e um alias exato -- nao muda ABI nem
+ * comportamento, so permite compilar codigo escrito contra a API nova
+ * (ex.: src/modules/zenoh, trazido do main).
+ */
+typedef int 	orb_sub_t;
+#define ORB_SUB_INVALID ((orb_sub_t)-1)
+static inline bool orb_sub_valid(orb_sub_t handle) { return handle >= 0; }
+
+/**
  * @see uORB::Manager::orb_advertise()
  */
 extern orb_advert_t orb_advertise(const struct orb_metadata *meta, const void *data) __EXPORT;

@@ -67,6 +67,14 @@ menu "Toolchain"
         help
             Enables Cmake Release for -O3 optimization
 
+    config BOARD_ROOT_PATH
+        string "PX4 Root file path"
+        default "/fs/microsd"
+        help
+            Raiz do sistema de arquivos da FCU. Usado pelo modulo zenoh para
+            achar /fs/microsd/zenoh/{net.txt,pub.csv,sub.csv}. Backportado do
+            PX4 main, onde vive no menu "File paths".
+
     config BOARD_ROMFSROOT
         string "ROMFSROOT"
         default "px4fmu_common"

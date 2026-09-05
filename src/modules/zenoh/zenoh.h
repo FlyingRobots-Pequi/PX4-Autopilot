@@ -50,10 +50,9 @@
 #include "subscribers/uorb_subscriber.hpp"
 
 
-class ZENOH : public ModuleBase, public ModuleParams
+class ZENOH : public ModuleBase<ZENOH>, public ModuleParams
 {
 public:
-	static Descriptor desc;
 
 	ZENOH();
 
@@ -79,8 +78,6 @@ public:
 	 * @see ModuleBase::task_spawn
 	 */
 	static int task_spawn(int argc, char *argv[]);
-
-	static int run_trampoline(int argc, char *argv[]);
 
 	static ZENOH *instantiate(int argc, char *argv[]);
 

@@ -52,7 +52,6 @@
 // Auto-generated header to all uORB <-> CDR conversions
 #include <uorb_pubsub_factory.hpp>
 
-ModuleBase::Descriptor ZENOH::desc{task_spawn, custom_command, print_usage};
 
 #define Z_PUBLISH
 #define Z_SUBSCRIBE
@@ -484,7 +483,7 @@ void ZENOH::run()
 	if (setupSession() < 0) {
 		PX4_ERR("Failed to setup Zenoh session");
 		cleanupSession();
-		exit_and_cleanup(desc);
+		exit_and_cleanup();
 		return;
 	}
 
@@ -495,7 +494,7 @@ void ZENOH::run()
 	if (setupTopics(pfds) < 0) {
 		PX4_ERR("Failed to setup topics");
 		cleanupSession();
-		exit_and_cleanup(desc);
+		exit_and_cleanup();
 		return;
 	}
 
@@ -527,7 +526,7 @@ void ZENOH::run()
 	}
 
 	cleanupSession();
-	exit_and_cleanup(desc);
+	exit_and_cleanup();
 }
 
 int ZENOH::custom_command(int argc, char *argv[])
@@ -610,13 +609,6 @@ int ZENOH::print_status()
 	return 0;
 }
 
-int ZENOH::run_trampoline(int argc, char *argv[])
-{
-	return ModuleBase::run_trampoline_impl(desc, [](int ac, char *av[]) -> ModuleBase * {
-		return ZENOH::instantiate(ac, av);
-	}, argc, argv);
-}
-
 int ZENOH::task_spawn(int argc, char *argv[])
 {
 
@@ -633,7 +625,7 @@ int ZENOH::task_spawn(int argc, char *argv[])
 		return -errno;
 
 	} else {
-		desc.task_id = task_id;
+		_task_id = task_id;
 		return 0;
 	}
 }
@@ -645,5 +637,5 @@ ZENOH *ZENOH::instantiate(int argc, char *argv[])
 
 int zenoh_main(int argc, char *argv[])
 {
-	return ModuleBase::main(ZENOH::desc, argc, argv);
+	return ZENOH::main(argc, argv);
 }
