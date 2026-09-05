@@ -1,6 +1,6 @@
 /****************************************************************************
  *
- *   Copyright (c) 2023 PX4 Development Team. All rights reserved.
+ *   Copyright (c) 2025 PX4 Development Team. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -31,18 +31,27 @@
  *
  ****************************************************************************/
 
-#ifndef DDS_CDRSTREAM_SERDER_H
-#define DDS_CDRSTREAM_SERDER_H
+/**
+ * @file rmw_attachment.h
+ *
+ * ROS2 RMW Attachment helper
+ *
+ * @author Peter van der Perk <peter.vanderperk@nxp.com>
+ */
 
-#include <stdlib.h>
-#include <dds/cdr/dds_cdrstream.h>
+#include <zenoh-pico.h>
 
-extern const struct dds_cdrstream_allocator dds_allocator;
-extern const uint8_t ros2_header[4];
+#pragma once
 
-// Max bytes the XCDR1 wire size can exceed the in-memory uORB struct (o_size):
-// CDR pads in declaration order while the struct is packed sorted-by-size.
-// Sizes outbound buffers and bounds inbound payloads before stack allocation.
-#define CDR_SAFETY_MARGIN 24
+/* Derived from ROS2 rmw https://github.com/ros2/rmw/blob/e6addf2411b8ee8a2ac43d691533b8c05ae8f1b6/rmw/include/rmw/types.h#L44 */
+#define RMW_GID_STORAGE_SIZE 16u
 
-#endif //DDS_CDRSTREAM_SERDER_H
+/* See rmw_zenoh design.md for more information https://github.com/ros2/rmw_zenoh/blob/rolling/docs/design.md#publishers */
+#define RMW_ATTACHEMENT_SIZE (8u + 8u + 1u + RMW_GID_STORAGE_SIZE)
+
+typedef struct __attribute__((__packed__)) RmwAttachment {
+	int64_t sequence_number;
+	int64_t time;
+	uint8_t rmw_gid_size;
+	uint8_t rmw_gid[RMW_GID_STORAGE_SIZE];
+} RmwAttachment;

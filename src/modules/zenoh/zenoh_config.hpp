@@ -49,16 +49,25 @@
 #include <zenoh-pico.h>
 
 #define ZENOH_MAX_PATH_LENGTH (128 + 40)
-#define ZENOH_SD_ROOT_PATH    CONFIG_ZENOH_CONFIG_PATH
-#define ZENOH_PUB_CONFIG_PATH ZENOH_SD_ROOT_PATH"/pub.csv"
-#define ZENOH_SUB_CONFIG_PATH ZENOH_SD_ROOT_PATH"/sub.csv"
-#define ZENOH_NET_CONFIG_PATH ZENOH_SD_ROOT_PATH"/net.txt"
+#define ZENOH_ROOT_PATH       CONFIG_BOARD_ROOT_PATH"/zenoh"
+#define ZENOH_PUB_CONFIG_PATH ZENOH_ROOT_PATH"/pub.csv"
+#define ZENOH_SUB_CONFIG_PATH ZENOH_ROOT_PATH"/sub.csv"
+#define ZENOH_NET_CONFIG_PATH ZENOH_ROOT_PATH"/net.txt"
 
 #define NET_MODE_SIZE sizeof("client")
 #define NET_LOCATOR_SIZE 64
-#define NET_CONFIG_LINE_SIZE NET_MODE_SIZE + NET_LOCATOR_SIZE
-#define TOPIC_INFO_SIZE 64
-#define MAX_LINE_SIZE 2*TOPIC_INFO_SIZE
+#define NET_CONFIG_LINE_SIZE (NET_MODE_SIZE + NET_LOCATOR_SIZE)
+#define KEYEXPR_RIHS01_SIZE sizeof("RIHS01_XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX")
+#define KEYEXPR_MSG_NAME "px4_msgs::msg::dds_::"
+#define KEYEXPR_MSG_NAME_SIZE sizeof(KEYEXPR_MSG_NAME)
+#define TOPIC_INFO_SIZE (96)
+#ifdef CONFIG_ZENOH_PUB_OPTION_OVERRIDE
+#define ZENOH_PUB_OPTIONS_SIZE (64)
+#define MAX_LINE_SIZE (2 * TOPIC_INFO_SIZE + ZENOH_PUB_OPTIONS_SIZE + 4)
+#else
+#define MAX_LINE_SIZE (2 * TOPIC_INFO_SIZE)
+#endif
+#define KEYEXPR_SIZE (2 * TOPIC_INFO_SIZE + KEYEXPR_MSG_NAME_SIZE + KEYEXPR_RIHS01_SIZE + 128)
 
 class Zenoh_Config
 {
@@ -77,23 +86,43 @@ public:
 	{
 		return getLineCount(ZENOH_SUB_CONFIG_PATH);
 	}
-	int getPublisherMapping(char *topic, char *type)
+	int getPublisherMapping(char *topic, char *type, int *instance, z_publisher_options_t *opts = nullptr)
 	{
-		return getPubSubMapping(topic, type, ZENOH_PUB_CONFIG_PATH);
+		(void)opts;
+#ifdef CONFIG_ZENOH_PUB_OPTION_OVERRIDE
+		char options_str[ZENOH_PUB_OPTIONS_SIZE];
+		int ret = getPubSubMapping(topic, type, instance, ZENOH_PUB_CONFIG_PATH, options_str);
+
+		if (ret > 0 && opts != nullptr) {
+			parsePublisherOptions(options_str, opts);
+		}
+
+		return ret;
+
+#else
+		return getPubSubMapping(topic, type, instance, ZENOH_PUB_CONFIG_PATH);
+#endif
 	}
-	int getSubscriberMapping(char *topic, char *type)
+	// existing_instance will be either 0 (should create a new instance) or nonzero (should reuse the existing 0 instance)
+	int getSubscriberMapping(char *topic, char *type, int *existing_instance)
 	{
-		return getPubSubMapping(topic, type, ZENOH_SUB_CONFIG_PATH);
+		return getPubSubMapping(topic, type, existing_instance, ZENOH_SUB_CONFIG_PATH);
 	}
+	int closePubSubMapping();
 
 
 private:
-	int getPubSubMapping(char *topic, char *type, const char *filename);
-	int AddPubSub(char *topic, char *datatype, const char *filename);
+#ifdef CONFIG_ZENOH_PUB_OPTION_OVERRIDE
+	bool parsePublisherOptions(const char *options_str, z_publisher_options_t *opts);
+#endif
+	int getPubSubMapping(char *topic, char *type, int *new_instance, const char *filename, char *options_str = nullptr);
+	int AddPubSub(char *topic, char *datatype, int new_instance, const char *filename,
+		      const char *options_str = nullptr);
+	int DeletePubSub(char *topic, const char *filename);
 	int SetNetworkConfig(char *mode, char *locator);
 	int getLineCount(const char *filename);
 
-	const char *get_csv_field(char *line, int num);
+	int parse_csv_line(char *line, const char **fields, int max_fields);
 	void generate_clean_config();
 	void dump_config();
 

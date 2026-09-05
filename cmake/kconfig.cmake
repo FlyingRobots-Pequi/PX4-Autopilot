@@ -13,6 +13,39 @@ set(DEFCONFIG_PATH ${PYTHON_EXECUTABLE} -m defconfig CACHE INTERNAL "defconfig p
 set(SAVEDEFCONFIG_PATH ${PYTHON_EXECUTABLE} -m savedefconfig CACHE INTERNAL "savedefconfig program" FORCE)
 set(GENCONFIG_PATH ${PYTHON_EXECUTABLE} -m genconfig CACHE INTERNAL "genconfig program" FORCE)
 
+# ---------------------------------------------------------------------------
+# Zenoh publisher/subscriber topic catalog
+#
+# src/modules/zenoh/Kconfig sources this file to expose one config option per
+# uORB topic. It is fully generated from the message set, so it is a build
+# artifact rather than source: generate it into the build tree here, before
+# Kconfig is parsed, and let Kconfig source it from there via the
+# ZENOH_KCONFIG_TOPICS environment variable. The build never writes it into the
+# source tree.
+#
+# The catalog is intentionally board-independent: it is generated from every
+# message rather than the per-board subset, so it does not depend on the
+# msg-gating Kconfig symbols it is sourced alongside (which would be circular).
+# The per-board Zenoh factory (generated in msg/CMakeLists.txt) is what actually
+# gates which topics get compiled in; a cataloged-but-unbuilt topic is inert.
+# ---------------------------------------------------------------------------
+set(ZENOH_KCONFIG_TOPICS ${PX4_BINARY_DIR}/src/modules/zenoh/Kconfig.topics)
+file(GLOB zenoh_catalog_msg_files
+	${PX4_SOURCE_DIR}/msg/*.msg
+	${PX4_SOURCE_DIR}/msg/versioned/*.msg
+)
+execute_process(
+	COMMAND ${PYTHON_EXECUTABLE} ${PX4_SOURCE_DIR}/Tools/zenoh/px_generate_zenoh_topic_files.py
+		--zenoh-config
+		-f ${zenoh_catalog_msg_files}
+		-o ${PX4_BINARY_DIR}/src/modules/zenoh/
+		-e ${PX4_SOURCE_DIR}/Tools/zenoh/templates/zenoh
+	RESULT_VARIABLE zenoh_kconfig_result
+)
+if(NOT zenoh_kconfig_result EQUAL 0)
+	message(FATAL_ERROR "Failed to generate Zenoh Kconfig.topics catalog (${zenoh_kconfig_result})")
+endif()
+
 set(COMMON_KCONFIG_ENV_SETTINGS
 	PYTHON_EXECUTABLE=${PYTHON_EXECUTABLE}
 	KCONFIG_CONFIG=${BOARD_CONFIG}
@@ -26,6 +59,9 @@ set(COMMON_KCONFIG_ENV_SETTINGS
 	ARCHITECTURE=${CMAKE_SYSTEM_PROCESSOR}
 	ROMFSROOT=${config_romfs_root}
 	BASE_DEFCONFIG=${BOARD_CONFIG}
+	# Absolute path to the generated Zenoh topic catalog, sourced by
+	# src/modules/zenoh/Kconfig via source "$(ZENOH_KCONFIG_TOPICS)".
+	ZENOH_KCONFIG_TOPICS=${ZENOH_KCONFIG_TOPICS}
 )
 
 set(config_user_list)
@@ -35,7 +71,7 @@ if(EXISTS ${BOARD_DEFCONFIG})
 	# Depend on BOARD_DEFCONFIG so that we reconfigure on config change
 	set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${BOARD_DEFCONFIG})
 
-	if(${LABEL} MATCHES "default" OR ${LABEL} MATCHES "recovery" OR ${LABEL} MATCHES "bootloader" OR ${LABEL} MATCHES "canbootloader")
+	if(${LABEL} MATCHES "default" OR ${LABEL} MATCHES "performance-test" OR ${LABEL} MATCHES "bootloader" OR ${LABEL} MATCHES "canbootloader")
 		# Generate boardconfig from saved defconfig
 		execute_process(
 			COMMAND ${CMAKE_COMMAND} -E env ${COMMON_KCONFIG_ENV_SETTINGS}
@@ -44,6 +80,10 @@ if(EXISTS ${BOARD_DEFCONFIG})
 			OUTPUT_VARIABLE DUMMY_RESULTS
 		)
 	else()
+		# Non-default labels merge default.px4board + {label}.px4board,
+		# so reconfigure must also trigger on changes to default.px4board.
+		set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${PX4_BOARD_DIR}/default.px4board)
+
 		# Generate boardconfig from default.px4board and {label}.px4board
 		execute_process(
 			COMMAND ${CMAKE_COMMAND} -E env ${COMMON_KCONFIG_ENV_SETTINGS}
@@ -337,6 +377,11 @@ if(EXISTS ${BOARD_DEFCONFIG})
 		if(UAVCAN_PERIPHERALS)
 			set(config_uavcan_peripheral_firmware ${UAVCAN_PERIPHERALS} CACHE INTERNAL "UAVCAN peripheral firmware" FORCE)
 		endif()
+	endif()
+
+	# ADDITIONAL INIT
+	if(ADDITIONAL_INIT)
+		set(config_additional_init ${ADDITIONAL_INIT} CACHE INTERNAL "additional init" FORCE)
 	endif()
 
 	if(UAVCAN_INTERFACES)

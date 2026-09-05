@@ -1,4 +1,29 @@
 # CONFIG_BOARD_UAVCAN_TIMER_OVERRIDE is not set
 CONFIG_DRIVERS_UAVCAN=n
+
+# XRCE e Zenoh nao convivem: publicam o mesmo conjunto de uORB e nao ha
+# flash para os dois. Voltar para o XRCE = regravar firmware.
 CONFIG_MODULES_UXRCE_DDS_CLIENT=n
+
 CONFIG_MODULES_ZENOH=y
+
+# OBRIGATORIO para ROS 2 Humble -- o default do Kconfig e 'y'.
+# Do Jazzy em diante o rmw_zenoh poe o hash do tipo (RIHS01, REP-2016) na
+# key expression; o Humble nao. Com o hash ligado as chaves nao casam e
+# NADA e entregue, sem nenhum erro em log. Ver docs/00-decisao.md D4.
+CONFIG_ZENOH_KEY_TYPE_HASH=n
+
+# Liveliness tokens: sem isso o `ros2 topic list` nao enxerga a FCU,
+# mesmo com os dados chegando.
+CONFIG_ZENOH_RMW_LIVELINESS=y
+
+# Endereco do router no companion. Casa com docs/02-rede.md; com ele o
+# net.txt do SD vira opcional.
+CONFIG_ZENOH_DEFAULT_LOCATOR="tcp/10.41.10.1:7447#iface=eth0"
+
+# Overrides de QoS por topico (campo 4 do pub.csv). Custa flash; ligar so
+# quando for afinar topico a topico.
+CONFIG_ZENOH_PUB_OPTION_OVERRIDE=n
+
+# 0 = NONE. Subir para 2 (INFO+ERROR) durante o bring-up.
+CONFIG_ZENOH_DEBUG=0
