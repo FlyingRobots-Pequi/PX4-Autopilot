@@ -1,3 +1,25 @@
 CONFIG_MODULES_UXRCE_DDS_CLIENT=n
 CONFIG_MODULES_ZENOH=y
-CONFIG_ZENOH_CONFIG_PATH="./zenoh"
+
+# No SITL o processo roda com a rootfs do build como diretorio de trabalho,
+# entao a raiz e relativa. O modulo monta ZENOH_ROOT_PATH = BOARD_ROOT_PATH
+# "/zenoh" -> ./zenoh, dentro de build/px4_sitl_zenoh/rootfs/.
+# (O fork antigo usava CONFIG_ZENOH_CONFIG_PATH, simbolo que o modulo
+# backportado nao le mais.)
+CONFIG_BOARD_ROOT_PATH="."
+
+# OBRIGATORIO para ROS 2 Humble -- mesma razao do alvo da v6x (docs D4).
+# Com o type hash ligado o rmw_zenohd conecta e nada e entregue.
+CONFIG_ZENOH_KEY_TYPE_HASH=n
+
+# Grafo ROS 2 (ros2 topic list enxergar o SITL).
+CONFIG_ZENOH_RMW_LIVELINESS=y
+
+# Overrides de QoS por topico: no SITL nao ha limite de flash, entao vale
+# deixar ligado para experimentar cc/rel/express sem rebuild.
+CONFIG_ZENOH_PUB_OPTION_OVERRIDE=y
+
+# O locator default do Kconfig ja e tcp/127.0.0.1:7447 quando PLATFORM_POSIX.
+
+# Sem limite de flash aqui: todos os topicos.
+CONFIG_ZENOH_PUBSUB_ALL=y
