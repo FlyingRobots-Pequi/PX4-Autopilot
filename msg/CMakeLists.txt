@@ -419,10 +419,25 @@ if(CONFIG_LIB_CDRSTREAM)
 	# CycloneDDS-tools doesn't ship with the cdrstream-desc feature thus we've to compile idlc from source
 	MESSAGE(STATUS "Configuring idlc :" ${CMAKE_CURRENT_BINARY_DIR}/idlc)
 	file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/idlc)
+
+	# O upstream fixa o launcher em 'ccache', que existe nas imagens de dev do
+	# PX4 mas nao em toda imagem. Sem ccache no PATH o build do idlc morre com
+	# "Error 127" (comando nao encontrado) la dentro do sub-build do CycloneDDS,
+	# longe da causa. Aqui ele e opcional.
+	find_program(CCACHE_PROGRAM ccache)
+	set(IDLC_LAUNCHER_ARGS)
+
+	if(CCACHE_PROGRAM)
+		list(APPEND IDLC_LAUNCHER_ARGS
+			-DCMAKE_C_COMPILER_LAUNCHER=${CCACHE_PROGRAM}
+			-DCMAKE_CXX_COMPILER_LAUNCHER=${CCACHE_PROGRAM})
+	else()
+		MESSAGE(STATUS "ccache nao encontrado; buildando idlc sem launcher")
+	endif()
+
 	execute_process(COMMAND ${CMAKE_COMMAND} ${PX4_SOURCE_DIR}/src/lib/cdrstream/cyclonedds
 			-DCMAKE_C_COMPILER=/usr/bin/gcc
-			-DCMAKE_C_COMPILER_LAUNCHER=ccache
-			-DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+			${IDLC_LAUNCHER_ARGS}
 			-DCMAKE_C_FLAGS=-Wno-maybe-uninitialized\ -Wno-unused-parameter
 			-DBUILD_EXAMPLES=OFF
 			-DENABLE_SSL=OFF
