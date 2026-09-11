@@ -612,10 +612,20 @@ int ZENOH::print_status()
 int ZENOH::task_spawn(int argc, char *argv[])
 {
 
+	// Abaixo do SCHED_PRIORITY_DEFAULT (100), onde ficam o TX do MAVLink, o
+	// nsh e o telnetd. O v6x nao define CONFIG_RR_INTERVAL, entao o
+	// escalonamento e SCHED_FIFO: uma task de prioridade 100 que nao bloqueia
+	// nunca devolve a CPU para as outras de prioridade 100. Medido numa v6x em
+	// 10/09/2026: `zenoh start` zerava os heartbeats (45/45 -> 0) e matava os
+	// dois shells de uma vez.
+	//
+	// As threads internas do zenoh-pico (zp_start_read_task/zp_start_lease_task)
+	// nascem de pthread_create com attr NULL e HERDAM a prioridade de quem as
+	// cria, entao baixar aqui ja cobre as filhas.
 	int task_id = px4_task_spawn_cmd(
 			      "zenoh",
 			      SCHED_DEFAULT,
-			      SCHED_PRIORITY_DEFAULT,
+			      SCHED_PRIORITY_DEFAULT - 10,
 			      4096,
 			      &run_trampoline,
 			      argv
