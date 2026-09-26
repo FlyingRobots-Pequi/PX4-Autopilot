@@ -21,6 +21,16 @@ if MODULES_ZENOH
         default "tcp/127.0.0.1:7447" if PLATFORM_POSIX
         default "tcp/10.41.10.1:7447#iface=eth0" if !PLATFORM_POSIX
 
+    config ZENOH_KEY_TYPE_HASH
+        bool "Include the ROS2 type hash (RIHS01) in key expressions"
+        default y
+        ---help---
+                From Jazzy on, rmw_zenoh puts the type hash (RIHS01, REP-2016) in the
+                key expression; Humble does not. Against a Humble peer the keys do not
+                match and NOTHING is delivered, with no error in any log -- so this must
+                be set to 'n' for Humble. With 'n' the literal "TypeHashNotSupported" is
+                used in place of the hash, which is what rmw_zenoh on Humble expects.
+
     config ZENOH_RMW_LIVELINESS
         bool "[EXPERIMENTAL] rmw_zenoh liveliness implemenation"
         default y

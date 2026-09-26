@@ -402,12 +402,19 @@ void Zenoh_Config::getNetworkConfig(char *mode, char *locator)
 			locator[0] = 0;
 		}
 
-	} else {
-		printf("Failed to open the file\n");
-	}
+		//Close the file
+		fclose(fp);
 
-	//Close the file
-	fclose(fp);
+	} else {
+		// fopen falhou: NAO cair no fclose(NULL) abaixo -- era uma das formas de
+		// crashar a placa com o /fs/microsd/zenoh/net.txt ausente. E devolver as
+		// strings VAZIAS, nao indefinidas: quem chama (ZENOH::setupSession) passa
+		// `mode` e `locator` para o zp_config_insert sem inicializar, e com lixo na
+		// pilha o z_open recebe um modo invalido.
+		PX4_ERR("Failed to open %s", ZENOH_NET_CONFIG_PATH);
+		mode[0] = 0;
+		locator[0] = 0;
+	}
 }
 
 int Zenoh_Config::getLineCount(const char *filename)
@@ -415,8 +422,13 @@ int Zenoh_Config::getLineCount(const char *filename)
 	int lines = 0;
 	int ch;
 
-	// Open file in write mode
 	FILE *fp = fopen(filename, "r");
+
+	// Sem esta guarda, apagar o pub.csv/sub.csv do SD crasha a placa no primeiro
+	// fgetc(NULL) -- medido em bancada.
+	if (fp == NULL) {
+		return 0;
+	}
 
 	while ((ch = fgetc(fp)) != EOF) {
 		if (ch == '\n') {

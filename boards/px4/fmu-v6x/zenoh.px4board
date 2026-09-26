@@ -1,5 +1,116 @@
 # CONFIG_BOARD_UAVCAN_TIMER_OVERRIDE is not set
 CONFIG_DRIVERS_UAVCAN=n
+
+# XRCE e Zenoh nao convivem: publicam o mesmo conjunto de uORB e nao ha
+# flash para os dois. Voltar para o XRCE = regravar firmware.
 CONFIG_MODULES_UXRCE_DDS_CLIENT=n
-CONFIG_BOARD_CONSTRAINED_FLASH=y
+
 CONFIG_MODULES_ZENOH=y
+
+# OBRIGATORIO para ROS 2 Humble -- o default do Kconfig e 'y'.
+# Do Jazzy em diante o rmw_zenoh poe o hash do tipo (RIHS01, REP-2016) na
+# key expression; o Humble nao. Com o hash ligado as chaves nao casam e
+# NADA e entregue, sem nenhum erro em log. Ver docs/00-decisao.md D4.
+#
+# Esta opcao NAO existe no zenoh do 1.17 upstream (o release/1.17 foi cortado
+# do main em 24/04/2026, antes desse trabalho): ela foi portada para
+# src/modules/zenoh/Kconfig junto com o #else de zenoh.cpp que emite
+# "TypeHashNotSupported" no lugar do hash.
+CONFIG_ZENOH_KEY_TYPE_HASH=n
+
+# Liveliness tokens: sem isso o `ros2 topic list` nao enxerga a FCU,
+# mesmo com os dados chegando.
+CONFIG_ZENOH_RMW_LIVELINESS=y
+
+# Endereco do router no companion. Casa com docs/02-rede.md; com ele o
+# net.txt do SD vira opcional (e o net.txt, quando existe, tem precedencia).
+CONFIG_ZENOH_DEFAULT_LOCATOR="tcp/10.41.10.1:7447#iface=eth0"
+
+# 0 = NONE. Subir para 2 (INFO+ERROR) durante o bring-up.
+CONFIG_ZENOH_DEBUG=0
+
+# NOTA: o CONFIG_ZENOH_PUB_OPTION_OVERRIDE que havia aqui no fork de 1.15.3 NAO
+# existe no 1.17 -- os overrides de QoS por topico (campo 4 do pub.csv) e os
+# params ZENOH_PUB_CC/REL/EXPR/PRIO vieram no main depois do corte do
+# release/1.17, e nao foram portados. Estava em 'n' de qualquer forma.
+
+# ---------------------------------------------------------------------
+# Selecao explicita de topicos.
+#
+# Com o default (ZENOH_PUBSUB_ALL) o firmware NAO CABE: em 1.15.3 o link
+# estourava o FLASH da v6x em 1088 bytes (100.06%). Aqui entram so os tipos
+# de fato usados -- os da cadeia de voo mais os que o dds_topics.yaml deste
+# fork ja entregava pelo XRCE (commit 22c66f49fb).
+#
+# Ao acrescentar topico no pub.csv/sub.csv do SD, ligue o tipo aqui tambem,
+# senao nao ha binding e o topico simplesmente nao aparece.
+# ---------------------------------------------------------------------
+CONFIG_ZENOH_PUBSUB_CUSTOM=y
+
+# cadeia de voo (pub.csv / sub.csv)
+CONFIG_ZENOH_PUBSUB_SENSOR_COMBINED=y
+CONFIG_ZENOH_PUBSUB_TIMESYNC_STATUS=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_LAND_DETECTED=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_LOCAL_POSITION=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_ODOMETRY=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_STATUS=y
+CONFIG_ZENOH_PUBSUB_OFFBOARD_CONTROL_MODE=y
+CONFIG_ZENOH_PUBSUB_TRAJECTORY_SETPOINT=y
+CONFIG_ZENOH_PUBSUB_VEHICLE_COMMAND=y
+
+# acrescentados em 2026-09-15 a pedido
+# vehicle_visual_odometry NAO precisa de entrada propria: e' alias de topico da
+# mensagem VehicleOdometry (msg/VehicleOdometry.msg:30), e o factory gerado
+# registra um ORB_ID por alias. O VEHICLE_ODOMETRY acima ja' o cobre.
+CONFIG_ZENOH_PUBSUB_VEHICLE_ATTITUDE=y
+CONFIG_ZENOH_PUBSUB_BATTERY_STATUS=y
+CONFIG_ZENOH_PUBSUB_SENSOR_OPTICAL_FLOW=y
+CONFIG_ZENOH_PUBSUB_DISTANCE_SENSOR=y
+
+# herdados do dds_topics.yaml do fork (PR #3)
+CONFIG_ZENOH_PUBSUB_VEHICLE_ANGULAR_VELOCITY=y
+CONFIG_ZENOH_PUBSUB_TAKEOFF_STATUS=y
+CONFIG_ZENOH_PUBSUB_CPULOAD=y
+CONFIG_ZENOH_PUBSUB_ESTIMATOR_STATUS=y
+CONFIG_ZENOH_PUBSUB_HOME_POSITION=y
+# NOTA: CONFIG_ZENOH_PUBSUB_COLLISION_REPORT saiu -- a msg collision_report NAO
+# EXISTE mais no 1.17 (o Kconfig.topics dele so tem collision_constraints, que e
+# outra mensagem, com outros campos). Se o tipo ainda for necessario, decidir
+# explicitamente qual msg do 1.17 ocupa o lugar antes de religar.
+
+# ---------------------------------------------------------------------
+# Corte de flash -- asa fixa / VTOL (~91 KB em 1.15.3).
+#
+# Este e' exatamente o delta do boards/px4/fmu-v6x/multicopter.px4board, na
+# versao do 1.17: o antigo MODULES_FW_POS_CONTROL foi dividido em
+# FW_LATERAL_LONGITUDINAL_CONTROL + FW_MODE_MANAGER, entao os nomes mudaram.
+# Seguro porque o airframe e' SYS_AUTOSTART=4001 (quadricoptero): esse codigo
+# nunca roda.
+#
+# NAO copiar o resto do multicopter.px4board: ele LIGA o simulador SIH e o
+# COMMON_RC, que so' somam flash.
+# ---------------------------------------------------------------------
+CONFIG_COMMON_DIFFERENTIAL_PRESSURE=n
+CONFIG_MODE_NAVIGATOR_VTOL_TAKEOFF=n
+CONFIG_MODULES_AIRSPEED_SELECTOR=n
+CONFIG_MODULES_FW_ATT_CONTROL=n
+CONFIG_MODULES_FW_AUTOTUNE_ATTITUDE_CONTROL=n
+CONFIG_MODULES_FW_LATERAL_LONGITUDINAL_CONTROL=n
+CONFIG_MODULES_FW_MODE_MANAGER=n
+CONFIG_MODULES_FW_RATE_CONTROL=n
+CONFIG_MODULES_VTOL_ATT_CONTROL=n
+
+# Folga extra, tambem so' de asa fixa (os dois saem no multicopter.px4board do
+# 1.17). Acrescentados em 2026-09-26 porque o 1.17 e maior que o 1.15.3 e uma
+# mudanca de .px4board custa um build completo (~2 h) para descobrir overflow.
+# CONFIG_EKF2_SIDESLIP is not set
+# CONFIG_SENSORS_VEHICLE_AIRSPEED is not set
+
+# NOTA: o CONFIG_BOARD_CONSTRAINED_FLASH=y que o zenoh.px4board do 1.17 upstream
+# traz fica DESLIGADO aqui, como no fork de 1.15.3 que esta voando. Ele nao e
+# cosmetico: guarda codigo funcional em commander (ModeManagement,
+# HealthAndArmingChecks), mavlink_receiver, ekf2 e flight_mode_manager -- 85
+# ocorrencias em 16 arquivos. Liga-lo derrubaria handlers de MAVLink e o
+# gerenciamento de modos externos. O upstream o usa porque assume
+# ZENOH_PUBSUB_ALL; aqui a selecao e custom e ha o corte de asa fixa acima.
+# Se o link estourar o flash, o primeiro lever e este -- nao os topicos.

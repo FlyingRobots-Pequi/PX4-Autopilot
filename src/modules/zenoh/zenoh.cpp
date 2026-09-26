@@ -113,6 +113,8 @@ int ZENOH::generate_rmw_zenoh_topic_keyexpr(const char *topic, const uint8_t *ri
 	if (type_name) {
 		strncpy(type, type_name, TOPIC_INFO_SIZE);
 		toCamelCase(type); // Convert uORB type to camel case
+
+#ifdef CONFIG_ZENOH_KEY_TYPE_HASH
 		return snprintf(keyexpr, KEYEXPR_SIZE, "%" PRId32 "%s/"
 				KEYEXPR_MSG_NAME "%s_/RIHS01_"
 				"%02x%02x%02x%02x%02x%02x%02x%02x"
@@ -129,6 +131,11 @@ int ZENOH::generate_rmw_zenoh_topic_keyexpr(const char *topic, const uint8_t *ri
 				rihs_hash[24], rihs_hash[25], rihs_hash[26], rihs_hash[27],
 				rihs_hash[28], rihs_hash[29], rihs_hash[30], rihs_hash[31]
 			       );
+#else
+		return snprintf(keyexpr, KEYEXPR_SIZE, "%" PRId32 "%s/"
+				KEYEXPR_MSG_NAME "%s_/TypeHashNotSupported",
+				_zenoh_domain_id.get(), topic, type);
+#endif
 	}
 
 	return -1;
@@ -153,6 +160,7 @@ int ZENOH::generate_rmw_zenoh_topic_liveliness_keyexpr(const z_id_t *id, const c
 		str++;
 	}
 
+#ifdef CONFIG_ZENOH_KEY_TYPE_HASH
 	return snprintf(keyexpr, KEYEXPR_SIZE,
 			"@ros2_lv/%" PRId32 "/"
 			"%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x/"
@@ -182,6 +190,25 @@ int ZENOH::generate_rmw_zenoh_topic_liveliness_keyexpr(const z_id_t *id, const c
 			rihs_hash[24], rihs_hash[25], rihs_hash[26], rihs_hash[27],
 			rihs_hash[28], rihs_hash[29], rihs_hash[30], rihs_hash[31]
 		       );
+#else
+	return snprintf(keyexpr, KEYEXPR_SIZE,
+			"@ros2_lv/%" PRId32 "/"
+			"%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x/"
+			"0/11/%s/%%/%%/px4_%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x%02x/%s/"
+			KEYEXPR_MSG_NAME "%s_/TypeHashNotSupported"
+			"/::,7:,:,:,,",
+			_zenoh_domain_id.get(),
+			id->id[0], id->id[1],  id->id[2], id->id[3], id->id[4], id->id[5], id->id[6],
+			id->id[7], id->id[8],  id->id[9], id->id[10], id->id[11], id->id[12], id->id[13],
+			id->id[14], id->id[15],
+			entity_str,
+			_px4_guid[0], _px4_guid[1], _px4_guid[2], _px4_guid[3],
+			_px4_guid[4], _px4_guid[5], _px4_guid[6], _px4_guid[7],
+			_px4_guid[8], _px4_guid[9], _px4_guid[10], _px4_guid[11],
+			_px4_guid[12], _px4_guid[13], _px4_guid[14], _px4_guid[15],
+			topic_lv, type_camel_case
+		       );
+#endif
 }
 
 int ZENOH::setupSession()
@@ -223,7 +250,54 @@ int ZENOH::setupSession()
 	} while ((ret = z_open(&_s, z_move(config), NULL)) < 0);
 
 	// Start read and lease tasks for zenoh-pico
-	if (zp_start_read_task(z_loan_mut(_s), NULL) < 0 || zp_start_lease_task(z_loan_mut(_s), NULL) < 0) {
+	//
+	// O attr NAO pode ser NULL. Com NULL, o pthread_create do NuttX aplica o
+	// g_default_pthread_attr, que e o PTHREAD_ATTR_INITIALIZER de
+	// include/nuttx/pthread.h:51:
+	//
+	//     PTHREAD_DEFAULT_PRIORITY   100     (pthread.h:120)
+	//     PTHREAD_EXPLICIT_SCHED             <-- EXPLICIT, nao INHERIT
+	//     PTHREAD_STACK_DEFAULT      2048
+	//
+	// EXPLICIT e o ponto: as duas threads NAO herdam nada de quem as cria.
+	// Medido numa v6x em 23/09/2026 com `top`: task pai `zenoh` em 90, as duas
+	// pthreads em 100.
+	//
+	// Duas consequencias, as duas corrigidas aqui:
+	//
+	// 1) STACK. 2048 bytes nao cobrem o caminho de entrega de amostra (callback
+	//    do subscriber -> publicacao no uORB). Medido na task de leitura: 1052
+	//    bytes em repouso, 1812 sob fluxo de vehicle_visual_odometry, com o
+	//    load_mon repetindo "low on stack! (212 bytes left)".
+	//
+	// 2) PRIORIDADE. Em 100 as duas ficam ACIMA da LPWORK (prioridade 50), que e
+	//    onde roda o RX/TX da Ethernet nesta placa, e no mesmo nivel do TX do
+	//    MAVLink -- exatamente a condicao que baixar a prioridade da task pai em
+	//    task_spawn() quis eliminar, e que baixar o pai NAO cobre, porque quem
+	//    faz o I/O de socket sao as filhas. Aqui elas descem para a mesma
+	//    prioridade do pai.
+	//
+	// O attr e MEMBRO da classe (_zenoh_task_attr), nao local: o zenoh-pico
+	// guarda o PONTEIRO em zn->_read_task_attr (zenoh-pico/src/net/session.c) e o
+	// reusa a cada reconexao. Ver o comentario no zenoh.h.
+	pthread_attr_init(&_zenoh_task_attr);
+	pthread_attr_setstacksize(&_zenoh_task_attr, 6144);
+
+	struct sched_param zenoh_task_param {};
+	zenoh_task_param.sched_priority = SCHED_PRIORITY_DEFAULT - 60;
+	pthread_attr_setinheritsched(&_zenoh_task_attr, PTHREAD_EXPLICIT_SCHED);
+	pthread_attr_setschedparam(&_zenoh_task_attr, &zenoh_task_param);
+
+	zp_task_read_options_t read_opt;
+	zp_task_read_options_default(&read_opt);
+	read_opt.task_attributes = &_zenoh_task_attr;
+
+	zp_task_lease_options_t lease_opt;
+	zp_task_lease_options_default(&lease_opt);
+	lease_opt.task_attributes = &_zenoh_task_attr;
+
+	if (zp_start_read_task(z_loan_mut(_s), &read_opt) < 0
+	    || zp_start_lease_task(z_loan_mut(_s), &lease_opt) < 0) {
 		PX4_ERR("Unable to start read and lease tasks");
 		z_drop(z_move(_s));
 		ret = -EINVAL;
@@ -502,6 +576,31 @@ Zenoh demo bridge
 	return 0;
 }
 
+// INSTRUMENTACAO (2026-09-24) -- contadores definidos em
+// zenoh-pico/src/transport/unicast/read.c, onde esta o comentario que explica
+// como ler os pares in/out. Compilados em C, dai o extern "C".
+// REMOVER junto com os de la quando o bug estiver fechado.
+extern "C" {
+	extern volatile uint32_t g_zp_loop;
+	extern volatile uint32_t g_zp_recv_in;
+	extern volatile uint32_t g_zp_recv_out;
+	extern volatile uint32_t g_zp_recv_data;
+	extern volatile uint32_t g_zp_proc_in;
+	extern volatile uint32_t g_zp_proc_out;
+	extern volatile uint32_t g_zp_handle_in;
+	extern volatile uint32_t g_zp_handle_out;
+	extern volatile uint32_t g_zp_short_read;
+	extern volatile uint32_t g_zp_toread_last;
+	extern volatile uint32_t g_zp_toread_max;
+	extern volatile uint32_t g_zp_zbuf_cap;
+	extern volatile uint32_t g_zp_zbuf_len;
+	extern volatile uint32_t g_zp_rv_bytes;
+	extern volatile uint32_t g_zp_rv_zero;
+	extern volatile uint32_t g_zp_rv_eagain;
+	extern volatile uint32_t g_zp_rv_last;
+	extern volatile uint32_t g_zp_rv_total;
+}
+
 int ZENOH::print_status()
 {
 	if (connected) {
@@ -510,6 +609,30 @@ int ZENOH::print_status()
 	} else {
 		PX4_INFO("Connecting");
 	}
+
+	// INSTRUMENTACAO: primeiro de tudo, porque a saida do shell MAVLink trunca.
+	// Rodar `zenoh status` DUAS vezes com ~1 s entre elas: o que prova travamento
+	// e o contador nao andar, nao o valor isolado.
+	PX4_INFO_RAW("rd loop:%lu recv:%lu/%lu data:%lu proc:%lu/%lu handle:%lu/%lu\n",
+		     (unsigned long)g_zp_loop,
+		     (unsigned long)g_zp_recv_in, (unsigned long)g_zp_recv_out,
+		     (unsigned long)g_zp_recv_data,
+		     (unsigned long)g_zp_proc_in, (unsigned long)g_zp_proc_out,
+		     (unsigned long)g_zp_handle_in, (unsigned long)g_zp_handle_out);
+
+	// Se toread_max > zbuf_cap, o router mandou um batch maior que o buffer
+	// negociado e a leitura trava para sempre -- ver o comentario em read.c.
+	PX4_INFO_RAW("rd short:%lu toread last:%lu max:%lu | zbuf cap:%lu len:%lu\n",
+		     (unsigned long)g_zp_short_read,
+		     (unsigned long)g_zp_toread_last, (unsigned long)g_zp_toread_max,
+		     (unsigned long)g_zp_zbuf_cap, (unsigned long)g_zp_zbuf_len);
+
+	// recv: eagain = timeout com link vivo; zero = EOF. Se no travamento so
+	// cresce eagain, o kernel nao tem dado para dar -- a perda e antes da FCU.
+	PX4_INFO_RAW("rd recv n:%lu eagain:%lu eof:%lu last:%lu total:%lu\n",
+		     (unsigned long)g_zp_rv_bytes, (unsigned long)g_zp_rv_eagain,
+		     (unsigned long)g_zp_rv_zero, (unsigned long)g_zp_rv_last,
+		     (unsigned long)g_zp_rv_total);
 
 	PX4_INFO("Publishers");
 
@@ -537,10 +660,30 @@ int ZENOH::print_status()
 int ZENOH::task_spawn(int argc, char *argv[])
 {
 
+	// Abaixo do SCHED_PRIORITY_DEFAULT (100), onde ficam o TX do MAVLink, o nsh e
+	// o telnetd. O v6x nao define CONFIG_RR_INTERVAL, entao o escalonamento e
+	// SCHED_FIFO: uma task de prioridade 100 que nao bloqueia nunca devolve a CPU
+	// para as outras de prioridade 100. Medido numa v6x em 10/09/2026:
+	// `zenoh start` zerava os heartbeats (45/45 -> 0) e matava os dois shells.
+	//
+	// 90 ainda era alto demais. O ETHWORK do stm32_ethernet.c cai no #else (nem
+	// CONFIG_STM32H7_ETHMAC_HPWORK nem _LPWORK existem no Kconfig desta versao do
+	// NuttX), entao o RX/TX da Ethernet roda na LPWORK, prioridade
+	// CONFIG_SCHED_LPWORKPRIORITY=50. Com o zenoh runnable a 90 o
+	// stm32_interrupt_work nunca era escalonado: a placa sumia da rede inteira
+	// (ENETUNREACH em qualquer sendto) e o SYN do connect() nunca saia do chip --
+	// impasse circular, o z_open girava a 52% de CPU esperando justamente a fila
+	// que ele proprio impedia de rodar. Abaixo de 50 a LPWORK preempta o zenoh e a
+	// Ethernet volta a andar.
+	//
+	// ATENCAO: baixar a prioridade AQUI cobre so' esta task. As duas threads
+	// internas do zenoh-pico (zp_start_read_task/zp_start_lease_task) NAO herdam
+	// nada -- o default do NuttX e PTHREAD_EXPLICIT_SCHED na prioridade 100. Quem
+	// cuida delas e o pthread_attr montado em setupSession(); ver o comentario la.
 	int task_id = px4_task_spawn_cmd(
 			      "zenoh",
 			      SCHED_DEFAULT,
-			      SCHED_PRIORITY_DEFAULT,
+			      SCHED_PRIORITY_DEFAULT - 60,
 			      4096,
 			      &run_trampoline,
 			      argv

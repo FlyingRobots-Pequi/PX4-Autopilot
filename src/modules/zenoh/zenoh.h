@@ -36,6 +36,7 @@
 
 #include <termios.h>
 #include <poll.h>
+#include <pthread.h>
 #include <sys/select.h>
 #include <sys/time.h>
 
@@ -103,6 +104,17 @@ private:
 
 	z_owned_session_t _s;
 	bool connected = false;
+
+	// Atributos das duas pthreads internas do zenoh-pico (read e lease).
+	//
+	// MEMBRO, nao variavel local: zp_start_read_task guarda o PONTEIRO em
+	// zn->_read_task_attr (zenoh-pico/src/net/session.c) e o reusa a cada
+	// reconexao (com AUTO_RECONNECT ligado, que e o default e o PX4 nao
+	// sobrescreve). Um attr na pilha de setupSession() viraria ponteiro pendurado
+	// no primeiro reconnect.
+	//
+	// Preenchido em setupSession(); ver o comentario la para cada campo.
+	pthread_attr_t _zenoh_task_attr{};
 
 	px4_guid_t _px4_guid{};
 
