@@ -85,8 +85,17 @@ public:
 		size_t len = z_bytes_len(payload);
 
 		// Validate payload size to prevent stack overflow from untrusted input.
-		// CDR payload = 4-byte header + serialized data, which should not exceed o_size + 4.
-		const size_t max_payload_size = _uorb_meta->o_size + 4;
+		// CDR payload = 4-byte header + serialized data.
+		//
+		// The bound can NOT be o_size + 4: the uORB struct generator reorders the
+		// fields by size to squeeze out padding, while CDR keeps the .msg order and
+		// pads every field to its own alignment. VehicleOdometry is 112 B as a uORB
+		// struct but 114 B as CDR (padding after pose_frame and velocity_frame), so
+		// with o_size + 4 every single visual odometry sample was dropped here,
+		// silently, before deserialization (measured on the bench, 2026-09-26).
+		// The padding in front of a field is always smaller than the field itself,
+		// so the serialized data never exceeds 2 * (sum of field sizes) <= 2 * o_size.
+		const size_t max_payload_size = 2 * _uorb_meta->o_size + 4;
 
 		if (len > max_payload_size || len < 4) {
 			return;
